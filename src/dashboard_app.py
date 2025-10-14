@@ -92,8 +92,8 @@ def load_training_data():
         "final_dataset-2.csv",
         "data/final dataset-2.csv",
         "final dataset-2.csv",
-        "data/final_dataset-2.csv",
-        "final_dataset-2.csv"
+        "data/final_dataset-2.pkl",
+        "final_dataset-2.pkl"
     ]
     
     for path in possible_paths:
@@ -195,17 +195,48 @@ if uploaded:
             model_type = type(sklearn_model).__name__
             st.caption(f"Model type: {model_type}")
             
-            # Try different explainers
-            if any(x in model_type.lower() for x in ['xgb', 'lightgbm', 'gbm', 'forest', 'tree']):
-                explainer = shap.TreeExplainer(sklearn_model)
+            # Handle Pipeline models - extract the final estimator
+            actual_model = sklearn_model
+            if model_type == 'Pipeline':
+                # Get the final estimator from the pipeline
+                actual_model = sklearn_model.steps[-1][1]
+                st.caption(f"Pipeline detected - using final estimator: {type(actual_model).__name__}")
+                
+                # Transform data through all steps except the final estimator
+                data_transformed = data_sample.copy()
+                for name, transformer in sklearn_model.steps[:-1]:
+                    data_transformed = transformer.transform(data_transformed)
+                
+                # Convert to DataFrame if it's a numpy array
+                if isinstance(data_transformed, np.ndarray):
+                    # Try to get feature names from the last transformer
+                    try:
+                        if hasattr(sklearn_model.steps[-2][1], 'get_feature_names_out'):
+                            feature_names = sklearn_model.steps[-2][1].get_feature_names_out()
+                            data_transformed = pd.DataFrame(data_transformed, columns=feature_names)
+                        else:
+                            data_transformed = pd.DataFrame(data_transformed)
+                    except:
+                        data_transformed = pd.DataFrame(data_transformed)
+                
+                data_sample = data_transformed
+            
+            final_model_type = type(actual_model).__name__
+            
+            # Try different explainers based on final model type
+            if any(x in final_model_type.lower() for x in ['xgb', 'lightgbm', 'gbm', 'forest', 'tree']):
+                st.caption("Using TreeExplainer...")
+                explainer = shap.TreeExplainer(actual_model)
                 shap_values = explainer.shap_values(data_sample)
-            elif any(x in model_type.lower() for x in ['linear', 'logistic', 'ridge', 'lasso']):
-                explainer = shap.LinearExplainer(sklearn_model, data_sample)
+            elif any(x in final_model_type.lower() for x in ['linear', 'logistic', 'ridge', 'lasso']):
+                st.caption("Using LinearExplainer...")
+                explainer = shap.LinearExplainer(actual_model, data_sample)
                 shap_values = explainer.shap_values(data_sample)
             else:
                 # Fallback to KernelExplainer
+                st.caption("Using KernelExplainer (this may take a moment)...")
                 background = shap.sample(data_sample, min(50, len(data_sample)))
-                explainer = shap.KernelExplainer(sklearn_model.predict, background)
+                explainer = shap.KernelExplainer(actual_model.predict, background)
                 shap_values = explainer.shap_values(data_sample)
             
             # Plot
