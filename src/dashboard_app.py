@@ -6,6 +6,8 @@ import shap
 import matplotlib.pyplot as plt
 import traceback
 from pathlib import Path
+import mlflow
+import mlflow.sklearn
 
 # ------------------------------
 # Page Configuration
@@ -19,13 +21,25 @@ st.set_page_config(
 # ------------------------------
 # Load Model
 # ------------------------------
-# @st.cache_resource
+@st.cache_resource
 def load_model():
     """Load trained model with error handling"""
     try:
-        with open("models/best_model.pkl", "rb") as file:
-            model = pickle.load(file)
-        return model
+        with open("best_model.pkl", "rb") as file:
+            mlflow_model = pickle.load(file)
+        
+        # Extract the actual sklearn model from MLflow wrapper
+        if hasattr(mlflow_model, '_model_impl'):
+            # MLflow PyFunc model - get the underlying implementation
+            underlying = mlflow_model._model_impl
+            if hasattr(underlying, 'sklearn_model'):
+                return underlying.sklearn_model, mlflow_model
+            return underlying, mlflow_model
+        elif hasattr(mlflow_model, 'sklearn_model'):
+            return mlflow_model.sklearn_model, mlflow_model
+        
+        # Not an MLflow model
+        return mlflow_model, mlflow_model
     except FileNotFoundError:
         st.error("❌ Model file 'best_model.pkl' not found. Please ensure it exists in the current directory.")
         st.stop()
@@ -33,24 +47,32 @@ def load_model():
         st.error(f"❌ Error loading model: {str(e)}")
         st.stop()
 
-model = load_model()
+sklearn_model, mlflow_model = load_model()
 
 # ------------------------------
 # Load Training Data (for drift analysis)
 # ------------------------------
-# @st.cache_data
+@st.cache_data
 def load_training_data():
     """Load training data for drift comparison"""
-    try:
-        train_data = pd.read_csv("data/final_dataset-2.csv")
-        return train_data
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        st.warning(f"Could not load training data: {str(e)}")
-        return None
+    possible_paths = [
+        "data/final_dataset-2.csv",
+        "final_dataset-2.csv",
+        "data/final dataset-2.csv",
+        "final dataset-2.csv"
+    ]
+    
+    for path in possible_paths:
+        try:
+            if Path(path).exists():
+                train_data = pd.read_csv(path)
+                return train_data, path
+        except:
+            continue
+    
+    return None, None
 
-train_data = load_training_data()
+train_data, train_data_path = load_training_data()
 
 # ------------------------------
 # Main UI
@@ -119,7 +141,8 @@ else:
         
         with st.spinner("Generating predictions..."):
             try:
-                predictions = model.predict(data)
+                # Use MLflow model for predictions (it has proper predict interface)
+                predictions = mlflow_model.predict(data)
                 data_with_preds = data.copy()
                 data_with_preds["Predicted"] = predictions
                 
@@ -161,20 +184,59 @@ else:
                     sample_size = min(100, len(data))
                     data_sample = data.head(sample_size)
                     
-                    explainer = shap.Explainer(model, data_sample)
-                    shap_values = explainer(data_sample)
+                    # Use the sklearn model (not MLflow wrapper) for SHAP
+                    st.info(f"Model type: {type(sklearn_model).__name__}")
+                    
+                    # Try different SHAP explainers based on model type
+                    explainer = None
+                    shap_values = None
+                    
+                    model_type = type(sklearn_model).__name__
+                    
+                    # Tree-based models
+                    if any(x in model_type.lower() for x in ['xgb', 'lightgbm', 'gbm', 'forest', 'tree']):
+                        st.info("Using TreeExplainer for tree-based model...")
+                        explainer = shap.TreeExplainer(sklearn_model)
+                        shap_values = explainer.shap_values(data_sample)
+                    
+                    # Linear models
+                    elif any(x in model_type.lower() for x in ['linear', 'logistic', 'ridge', 'lasso']):
+                        st.info("Using LinearExplainer for linear model...")
+                        explainer = shap.LinearExplainer(sklearn_model, data_sample)
+                        shap_values = explainer.shap_values(data_sample)
+                    
+                    # Fallback to KernelExplainer
+                    else:
+                        st.info("Using KernelExplainer (this may take a moment)...")
+                        background = shap.sample(data_sample, min(50, len(data_sample)))
+                        
+                        # Create prediction function that works with the sklearn model
+                        def model_predict(X):
+                            return sklearn_model.predict(X)
+                        
+                        explainer = shap.KernelExplainer(model_predict, background)
+                        shap_values = explainer.shap_values(data_sample)
                     
                     # SHAP Summary Plot
                     fig, ax = plt.subplots(figsize=(10, 6))
-                    shap.summary_plot(shap_values, data_sample, show=False)
+                    
+                    if isinstance(shap_values, list):
+                        # Multi-class classification
+                        shap.summary_plot(shap_values[0], data_sample, show=False)
+                    else:
+                        shap.summary_plot(shap_values, data_sample, show=False)
+                    
                     st.pyplot(fig)
                     plt.close()
                     
-                    st.caption(f"SHAP analysis computed on {sample_size} samples")
+                    st.success(f"✅ SHAP analysis completed on {sample_size} samples")
                     
                 except Exception as e:
-                    st.warning(f"⚠️ Unable to generate SHAP plot: {str(e)}")
-                    st.info("SHAP may not be compatible with this model type or data format")
+                    st.error(f"❌ Unable to generate SHAP plot: {str(e)}")
+                    with st.expander("🐛 Debug Information"):
+                        st.code(traceback.format_exc())
+                        st.write("Model attributes:", dir(sklearn_model))
+                    st.info("💡 Try uploading a smaller dataset or contact support.")
         
         # Drift Analysis
         if show_drift and train_data is not None:
@@ -221,7 +283,16 @@ else:
         elif show_drift and train_data is None:
             st.markdown("---")
             st.subheader("📈 Data Drift Analysis")
-            st.info("Training dataset not found at 'data/final_dataset-2.csv'. Drift analysis unavailable.")
+            st.info("⚠️ Training dataset not found. Please place 'final_dataset-2.csv' in one of these locations:")
+            st.code("\n".join([
+                "• data/final_dataset-2.csv",
+                "• final_dataset-2.csv",
+                "• data/final dataset-2.csv"
+            ]))
+        
+        else:
+            if train_data is not None and train_data_path:
+                st.sidebar.success(f"✅ Training data loaded from: {train_data_path}")
     
     except Exception as e:
         st.error(f"❌ Error processing file: {str(e)}")
