@@ -14,9 +14,55 @@ from pathlib import Path
 @st.cache_resource
 def load_model():
     """Load the trained model from pickle file"""
+    import os
+    
+    # Try multiple possible locations
+    possible_model_paths = [
+        "best_model.pkl",
+        "./best_model.pkl",
+        "models/best_model.pkl",
+        "../best_model.pkl",
+        "model.pkl",
+        "best_model.pickle"
+    ]
+    
+    # First, show debug info
+    current_dir = os.getcwd()
+    files_in_dir = os.listdir('.')
+    
+    model_path = None
+    for path in possible_model_paths:
+        if os.path.exists(path):
+            model_path = path
+            break
+    
+    # If still not found, search for any .pkl files
+    if model_path is None:
+        pkl_files = [f for f in files_in_dir if f.endswith('.pkl')]
+        if pkl_files:
+            model_path = pkl_files[0]  # Use the first .pkl file found
+    
+    if model_path is None:
+        st.error("❌ Model file not found!")
+        st.write("**Current directory:**", current_dir)
+        st.write("**Files in current directory:**")
+        st.code("\n".join(files_in_dir))
+        st.write("**Looking for:**")
+        st.code("\n".join(possible_model_paths))
+        
+        st.info("💡 **How to fix:**")
+        st.markdown("""
+        1. Make sure `best_model.pkl` is in the same directory as your Streamlit app
+        2. Or run Streamlit from the directory containing `best_model.pkl`
+        3. Or specify the full path to your model file
+        """)
+        st.stop()
+    
     try:
-        with open("best_model.pkl", "rb") as file:
+        with open(model_path, "rb") as file:
             mlflow_model = pickle.load(file)
+        
+        st.sidebar.success(f"✅ Model loaded from: {model_path}")
         
         # Extract sklearn model from MLflow wrapper if needed
         if hasattr(mlflow_model, '_model_impl'):
@@ -28,11 +74,9 @@ def load_model():
             return mlflow_model.sklearn_model, mlflow_model
         
         return mlflow_model, mlflow_model
-    except FileNotFoundError:
-        st.error("❌ Model file 'best_model.pkl' not found")
-        st.stop()
     except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
+        st.error(f"❌ Error loading model from {model_path}: {str(e)}")
+        st.code(traceback.format_exc())
         st.stop()
 
 sklearn_model, mlflow_model = load_model()
@@ -44,12 +88,12 @@ sklearn_model, mlflow_model = load_model()
 def load_training_data():
     """Load training data for drift analysis"""
     possible_paths = [
-        "data/final_dataset-2.pkl",
-        "final_dataset-2.pkl",
         "data/final_dataset-2.csv",
         "final_dataset-2.csv",
         "data/final dataset-2.csv",
-        "final dataset-2.csv"
+        "final dataset-2.csv",
+        "data/final_dataset-2.csv",
+        "final_dataset-2.csv"
     ]
     
     for path in possible_paths:
@@ -233,9 +277,9 @@ if uploaded:
     else:
         st.info("⚠️ Training dataset not found. Place your training data at one of these locations:")
         st.code("\n".join([
-            "• data/final_dataset-2.pkl",
-            "• data/final_dataset-2.csv",
-            "• final_dataset-2.csv"
+            "• data/final_dataset-2.csv (recommended)",
+            "• final_dataset-2.csv",
+            "• data/final dataset-2.csv"
         ]))
 
 else:
