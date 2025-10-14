@@ -6,7 +6,7 @@ import traceback
 app = Flask(__name__)
 
 # Load trained model
-with open("models/best_model.pkl", "rb") as f:
+with open("best_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 
