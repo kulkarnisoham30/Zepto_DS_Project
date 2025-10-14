@@ -55,19 +55,31 @@ sklearn_model, mlflow_model = load_model()
 @st.cache_data
 def load_training_data():
     """Load training data for drift comparison"""
+    # Check for .pkl files first, then .csv
     possible_paths = [
-        "data/final_dataset-2.csv",
-        "final_dataset-2.csv",
-        "data/final dataset-2.csv",
-        "final dataset-2.csv"
+        ("data/final_dataset-2.pkl", "pkl"),
+        ("final_dataset-2.pkl", "pkl"),
+        ("data/training_data.pkl", "pkl"),
+        ("training_data.pkl", "pkl"),
+        ("data/final_dataset-2.csv", "csv"),
+        ("final_dataset-2.csv", "csv"),
+        ("data/final dataset-2.csv", "csv"),
+        ("final dataset-2.csv", "csv")
     ]
     
-    for path in possible_paths:
+    for path, file_type in possible_paths:
         try:
             if Path(path).exists():
-                train_data = pd.read_csv(path)
+                if file_type == "pkl":
+                    with open(path, "rb") as f:
+                        train_data = pickle.load(f)
+                        # Convert to DataFrame if it's a numpy array or other format
+                        if not isinstance(train_data, pd.DataFrame):
+                            train_data = pd.DataFrame(train_data)
+                else:
+                    train_data = pd.read_csv(path)
                 return train_data, path
-        except:
+        except Exception as e:
             continue
     
     return None, None
@@ -283,11 +295,17 @@ else:
         elif show_drift and train_data is None:
             st.markdown("---")
             st.subheader("📈 Data Drift Analysis")
-            st.info("⚠️ Training dataset not found. Please place 'final_dataset-2.csv' in one of these locations:")
+            st.info("⚠️ Training dataset not found. Please place your training data file in one of these locations:")
             st.code("\n".join([
+                "PKL files (preferred):",
+                "• data/best_model.pkl",
+                "• best_model.pkl",
+                "• data/best_model.pkl",
+                "• best_model.pkl",
+                "",
+                "CSV files:",
                 "• data/final_dataset-2.csv",
-                "• final_dataset-2.csv",
-                "• data/final dataset-2.csv"
+                "• final_dataset-2.csv"
             ]))
         
         else:
