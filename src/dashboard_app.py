@@ -19,7 +19,7 @@ st.set_page_config(
 # ------------------------------
 # Load Model
 # ------------------------------
-@st.cache_resource
+# @st.cache_resource
 def load_model():
     """Load trained model with error handling"""
     try:
@@ -38,7 +38,7 @@ model = load_model()
 # ------------------------------
 # Load Training Data (for drift analysis)
 # ------------------------------
-@st.cache_data
+# @st.cache_data
 def load_training_data():
     """Load training data for drift comparison"""
     try:
