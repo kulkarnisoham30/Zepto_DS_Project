@@ -9,4 +9,6 @@ flask
 mlflow
 xgboost
 flask
-
+streamlit
+matplotlib
+shap
