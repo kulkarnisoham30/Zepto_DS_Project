@@ -1,0 +1,13 @@
+{
+  "quantity_x": 4,
+  "price_per_unit": 40,
+  "total_price": 160,
+  "customer_rating": 4,
+  "mrp": 2500,
+  "discountPercent": 16,
+  "availableQuantity": 3,
+  "discountedSellingPrice": 2100,
+  "weightInGms": 500,
+  "quantity_y": 3,
+  "category_code": 0
+}

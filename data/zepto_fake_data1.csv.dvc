@@ -1,0 +1,5 @@
+outs:
+- md5: 84d7848c6a62d57a1a520c6c1fa6d7e9
+  size: 30842
+  hash: md5
+  path: zepto_fake_data1.csv
