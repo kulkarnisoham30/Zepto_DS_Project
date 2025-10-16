@@ -1,0 +1,46 @@
+name: DVC Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'prompt/*.csv'
+      - 'dvc.yaml'
+  workflow_dispatch:
+
+jobs:
+  dvc-pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install DVC
+      run: |
+        python -m pip install --upgrade pip
+        pip install dvc[s3]
+    
+    - name: Configure DVC
+      run: |
+        dvc config core.autostage true
+        dvc config core.remote local
+        dvc config core.remote.local.url ./dvc-storage
+    
+    - name: Pull data
+      run: |
+        dvc pull
+    
+    - name: Run DVC pipeline
+      run: |
+        dvc repro
+    
+    - name: Push results
+      run: |
+        dvc push
